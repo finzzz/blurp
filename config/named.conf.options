@@ -1,0 +1,39 @@
+zone DOMAIN_NAME {
+    type master;
+    file "/etc/bind/my.zone";
+};
+
+options {
+    directory "/var/cache/bind";
+
+    forwarders {
+        9.9.9.9;
+    };
+
+    allow-query { any; };
+	allow-recursion { 127/8; };
+	version "NA";
+    querylog yes;
+    allow-transfer { none; };
+    dnssec-validation auto;
+    auth-nxdomain no;
+    listen-on { any; };
+    listen-on-v6 { any; };
+};
+
+logging {
+    channel bind_log {
+        file "/var/log/named/query.log" versions 3 size 5m;
+        severity info;
+        print-category yes;
+        print-severity yes;
+        print-time yes;
+    };
+    category default { bind_log; };
+    category update { bind_log; };
+    category update-security { bind_log; };
+    category security { bind_log; };
+    category queries { bind_log; };
+    category lame-servers { null; };
+};
+

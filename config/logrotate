@@ -1,0 +1,12 @@
+/var/log/named/query.log {
+  daily
+  missingok
+  rotate 7
+  compress
+  delaycompress
+  notifempty
+  create 644 bind bind
+  postrotate
+    service bind9 reload > /dev/null
+  endscript
+}

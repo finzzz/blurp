@@ -1,0 +1,105 @@
+#! /bin/bash
+
+# Font color
+RED='\033[1;31m'
+NC='\033[0m'
+
+[ "$1" = "" ] && echo "Wrong usage, please read the documentation" && exit
+
+DOMAIN_NAME="$1"
+
+if [[ ! $@ =~ "--skip-install" ]]
+then
+    # Install Packages & Dependencies
+    apt update >/dev/null 2>&1 && apt install -y curl dnsutils bind9 bind9-utils logrotate >/dev/null 2>&1
+
+    DOMAIN_IP=$(curl -s ip.me)
+    BIND_PATH="/etc/bind"
+
+    # Setup Path
+    mkdir -m 775 -p /var/log/named 2> /dev/null
+    chown -R bind:root /var/log/named
+
+    # Adding my.zone to $BIND_PATH/my.zone
+    sed -n -e "s/DOMAIN_NAME/"$DOMAIN_NAME"/g; s/DOMAIN_IP/"$DOMAIN_IP"/g; w "$BIND_PATH"/my.zone" config/my.zone
+
+    #Add the domain zone
+    sed -n -e "s/DOMAIN_NAME/"$DOMAIN_NAME"/g; w "$BIND_PATH"/named.conf.options" config/named.conf.options
+
+    # Copy necessary files
+    cp config/logrotate /etc/logrotate.d/bind9 # Setting up logrotate
+    cp config/bind9 /etc/default/ #  Overwrite Bind9 default file
+
+    systemctl enable -q named
+    systemctl restart named # Restarting bind9 service
+fi
+
+# Create certbot script
+echo -e "${RED}Generated autogen_certbot to get SSL certificate. You can use this script to renew certificate${NC}"
+echo "#! /bin/bash" > autogen_certbot
+echo "apt update >/dev/null 2>&1 && apt install -y certbot >/dev/null 2>&1" >> autogen_certbot
+echo "certbot certonly -q --manual --no-eff-email -n --manual-public-ip-logging-ok --agree-tos --preferred-challenges=dns -m contact@"$DOMAIN_NAME" --manual-auth-hook "$(pwd)"/add_record --manual-cleanup-hook "$(pwd)"/clean_record -d "*.""$DOMAIN_NAME","$DOMAIN_NAME"" >> autogen_certbot
+chmod +x autogen_certbot
+[[ "$@" =~ "--cert" ]] && ./autogen_certbot
+
+# Install cronjob to renew certificate
+[[ "$@" =~ "--auto-renew" ]] && sed -i -e "/autogen_certbot/d" /var/spool/cron/crontabs/root \
+                             && echo "0 0 1 */2 * "$(pwd)"/autogen_certbot" > /var/spool/cron/crontabs/root
+
+# Install catcher with nginx
+if [[ "$@" =~ "--catcher" ]]
+then
+    apt update >/dev/null 2>&1 && apt install -y pipenv nginx >/dev/null 2>&1
+    mkdir -p ../request_catcher 2>/dev/null && git clone https://gitlab.com/finzzz/request_catcher ../request_catcher 2>/dev/null
+    sed -i -e "s/DOMAIN_NAME/"$DOMAIN_NAME"/g;w /etc/nginx/sites-enabled/default" config/nginx-default
+    systemctl enable -q nginx
+    systemctl restart nginx
+    cd ../request_catcher && pipenv sync --bare && cd - >/dev/null
+    echo -e "Spawn request catcher using this command :"
+    echo -e "${RED}inside /path/to/request_catcher > pipenv run gunicorn -w 2 -b :5000 app:app${NC}"
+fi
+
+if [[ "$@" =~ "--mail" ]]
+then
+    apt update >/dev/null 2>&1 && DEBIAN_FRONTEND=noninteractive apt install -y postfix dovecot-core dovecot-imapd >/dev/null 2>&1
+
+    # postfix setup
+    echo "$DOMAIN_NAME" > /etc/mailname
+    postconf -e "myhostname = "$DOMAIN_NAME""
+    postconf -e "home_mailbox= Maildir/"
+    postconf -e "smtpd_sasl_type = dovecot"
+    postconf -e "smtpd_sasl_path = private/auth"
+    postconf -e "smtpd_sasl_auth_enable = yes"
+    postconf -e "smtpd_tls_cert_file=/etc/letsencrypt/live/"$DOMAIN_NAME"/fullchain.pem"
+    postconf -e "smtpd_tls_key_file=/etc/letsencrypt/live/"$DOMAIN_NAME"/privkey.pem"
+    postconf -e "smtpd_use_tls = yes"
+    postconf -e "smtp_use_tls = yes"
+    postconf -e "smtpd_tls_auth_only = no"
+    postconf -e "smtpd_tls_loglevel = 1"
+    postconf -e "smtpd_tls_received_header = yes"
+    postconf -e "virtual_alias_maps= hash:/etc/postfix/virtual"
+    echo "@"$DOMAIN_NAME" catch-all" > /etc/postfix/virtual
+    sed -i -e "s/#smtp /smtp /g" -e "s/#submission /submission /g" -e "s/#smtpd /smtpd /g" -e "s/#smtps /smtps /g" /etc/postfix/master.cf
+    postconf -P "smtps/inet/smtpd_sasl_auth_enable=yes"
+    postconf -P "smtps/inet/smtpd_tls_wrappermode=yes"
+    postmap /etc/postfix/virtual
+    systemctl enable -q postfix
+    systemctl restart postfix
+
+    # dovecot setup
+    sed -i -e "s#</etc/dovecot/private/dovecot.pem#</etc/letsencrypt/live/"$DOMAIN_NAME"/fullchain.pem#g" /etc/dovecot/conf.d/10-ssl.conf
+    sed -i -e "s#</etc/dovecot/private/dovecot.key#</etc/letsencrypt/live/"$DOMAIN_NAME"/privkey.pem#g" /etc/dovecot/conf.d/10-ssl.conf
+    sed -i -e "s/#disable_plaintext_auth = yes/disable_plaintext_auth = no/g" /etc/dovecot/conf.d/10-auth.conf
+    sed -i -e "s/^mail_location.*/mail_location = maildir:~\/Maildir/g" /etc/dovecot/conf.d/10-mail.conf
+
+    sed -i -e '/# Postfix smtp-auth/,/# Auth process/{//!d}' \
+        -e "/Postfix smtp-auth/a\  unix_listener \/var\/spool\/postfix\/private\/auth { \
+\n    mode = 0666 \
+\n    user = postfix \
+\n    group = postfix\n  }\n" /etc/dovecot/conf.d/10-master.conf
+
+    systemctl enable -q dovecot
+    systemctl restart dovecot
+
+    echo -e "${RED}Please create user \"catch-all\" to receive email${NC}"
+fi

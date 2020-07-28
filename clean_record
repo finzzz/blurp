@@ -1,0 +1,5 @@
+#! /bin/bash
+
+ZONE_PATH="/etc/bind/my.zone"
+sed -i -e "/_acme-challenge.*/d" "$ZONE_PATH"
+service bind9 restart

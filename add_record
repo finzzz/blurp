@@ -1,0 +1,5 @@
+#! /bin/bash
+
+ZONE_PATH="/etc/bind/my.zone"
+echo "_acme-challenge IN TXT "$CERTBOT_VALIDATION"" >> "$ZONE_PATH"
+service bind9 restart
