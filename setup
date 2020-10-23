@@ -50,7 +50,7 @@ chmod +x autogen_certbot
 if [[ "$@" =~ "--catcher" ]]
 then
     apt update >/dev/null 2>&1 && apt install -y pipenv nginx >/dev/null 2>&1
-    mkdir -p ../request_catcher 2>/dev/null && git clone https://gitlab.com/finzzz/request_catcher ../request_catcher 2>/dev/null
+    mkdir -p ../request_catcher 2>/dev/null && git clone https://gitlab.com/finzzz/py_request_catcher ../request_catcher 2>/dev/null
     sed -i -e "s/DOMAIN_NAME/"$DOMAIN_NAME"/g;w /etc/nginx/sites-enabled/default" config/nginx-default
     systemctl enable -q nginx
     systemctl restart nginx
