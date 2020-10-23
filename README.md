@@ -6,7 +6,7 @@ Self hostable clone of Burp Collaborator. [original project](https://github.com/
 
 ## Features
 - DNS Service
-- HTTP(S) Request Catcher & File Hosting
+- [HTTP(S) Request Catcher](https://gitlab.com/finzzz/request-catcher)
 - SMTP Service (25,465,587)
 
 ## Prerequisites
@@ -61,10 +61,6 @@ foo@mycomputer:~$ sudo tail -f /var/log/named/query.log
 25-Oct-2018 14:43:28.297 queries: info: client @0x7f24f8001250 195.158.104.28#58760 (12321931-xxe.foo.bar): query: 12321931-xxe.foo.bar IN A -E(0) (127.127.127.127)
 25-Oct-2018 14:43:28.390 queries: info: client @0x7f24f8001250 195.158.104.28#58760 (12321931-xxe.foo.bar): query: 12321931-xxe.foo.bar IN A -E(0) (127.127.127.127)
 ```
-
-### File Hosting
-1. Put file in /var/www/html/
-2. Access at file.foo.bar/filename.txt
 
 ### Email Settings
 Email : tom@foo.bar
